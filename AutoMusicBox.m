@@ -1,28 +1,46 @@
-function [scorenew] = AutoMusicBox(filename,savedir,varargin)
+function [scorenew,score] = AutoMusicBox(filename,savedir,varargin)
 %AutoMusicBox: https://github.com/glassykingyo/AutoMusicBox for details
-%   filename: str, dir and filename of the mp3
-%   savedir: str, dir to output image file
+%Input: 
+%   filename: str, dir and filename of the mp3 file
+%   savedir: str, dir to output image file, end with '\'
 %   option:
 %   about mp3 file: 
-%       timerange: [min, max](s), start and end of the target music
+%       TimeRange: [min, max](s), start and end of the target music
 %       segment, select entire file by default
-%       soundtrack: 1 means left, 2 means right, 'all' means average of
+%       SoundTrack: 1 means left, 2 means right, 'all' means average of
 %       both, default is 'all'
 %   about STFT:
 %       hannwindow: double, length of hamming window, default is 2048 
 %       noverlap: double, Number of overlapped samples, default is 1024
 %       nfft: double, Number of DFT points, default is 4096
-%   
+%   about note sample:
+%       noteWinSize: [x,y], Size of sliding window to sample note from 
+%       Time-frequency graph,default is 10*3
+%   about image output:
+%       HideMiddle: if export middle image. 1 means not export, 0 means export,
+%       default is 1
+%       ifAsk: double, Whether to prompt for a time range after generating 
+%       the full score. 1 means ask, 0 means don't, default is 1
+%Output:
+%   scorenew: Matrix representation of the music box score: pitch × time,
+%   with 1 indicating a note is present.
+%   score: Matrix representation of the full score.
+
 
 % para
 p = inputParser;
 %file
-addParameter(p, 'timerange', 'all');
-addParameter(p, 'soundtrack', 1);
+addParameter(p, 'TimeRange', 'all');
+addParameter(p, 'SoundTrack', 1);
 %STFT
 addParameter(p, 'hannwindow', 2048);
 addParameter(p, 'noverlap' , 1024);
 addParameter(p, 'nfft' , 4096);
+%sample
+addParameter(p, 'noteWinSize', [10,3]);
+%image output
+addParameter(p, 'HideMiddle' , 1);
+addParameter(p, 'ifAsk' , 1);
 
 parse(p, varargin{:});
 opts = p.Results;
@@ -34,26 +52,26 @@ catch
     error('Could not find the MP3 file. Filename might not exist')
 end
 
-if all(opts.soundtrack=='all')
+if all(opts.SoundTrack=='all')
     audio = mean(audio,2);
-elseif isscalar(opts.soundtrack) && isa(opts.soundtrack,'double')
-    if isa(opts.timerange,'str')
-        if all(opts.timerange=='all')
-            audio = audio(:,opts.soundtrack);
+elseif isscalar(opts.SoundTrack) && isa(opts.SoundTrack,'double')
+    if isa(opts.TimeRange,'str')
+        if all(opts.TimeRange=='all')
+            audio = audio(:,opts.SoundTrack);
         else
-            error('Invalid input format: timerange')
+            error('Invalid input format: TimeRange')
         end
-    elseif isa(opts.timerange,'double')
+    elseif isa(opts.TimeRange,'double')
         try
-            audio = audio(floor(fs*timerange(1)):floor(fs*timerange(2)),opts.soundtrack); 
+            audio = audio(floor(fs*opts.TimeRange(1)):floor(fs*opts.TimeRange(2)),opts.SoundTrack); 
         catch
             error('Time Range exceed the length of the MP3 file.')
         end
     else
-        error('Invalid input format: timerange')
+        error('Invalid input format: TimeRange')
     end
 else
-    error('Invalid input format: soundtrack')
+    error('Invalid input format: SoundTrack')
 end
 
 window = hann(opts.hannwindow);
@@ -106,23 +124,31 @@ for i = 1:length(freqbox)
     databefore(i,:) = amplitude(idx,:);
 end
 
-try
-    saveas(gcf,[savedir,'baseTFA.fig'])
-    saveas(gcf,[savedir,'baseTFA.png'])
-catch
-    error('Fail to save image file. Savedir might not exist.')
+if ~logical(opts.HideMiddle)
+    try
+        saveas(gcf,[savedir,'baseTFA.fig'])
+        saveas(gcf,[savedir,'baseTFA.png'])
+    catch
+        error('Fail to save image file. Savedir might not exist.')
+    end
 end
 
 clf
 imagesc(databefore)
-saveas(gcf,'data.fig')
-saveas(gcf,'data.png')
+if ~logical(opts.HideMiddle)
+    try
+        saveas(gcf,[savedir,'data.fig'])
+        saveas(gcf,[savedir,'data.png'])
+    catch
+        error('Fail to save image file. Savedir might not exist.')
+    end
+end
 
 % clean data
 globalmax = max(databefore,[],'all');
 
 dataaver = zeros(size(databefore));
-peakdistance = 10;
+peakdistance = opts.noteWinSize(1);
 for row = 1:height(databefore)
     temp = smooth(databefore(row,:),3)';
     if all(temp<0.1*globalmax)
@@ -140,14 +166,13 @@ for row = 1:height(databefore)
     end
 end
 
-windowSizec = [peakdistance,3];
 dataclean = dataaver;  
-for col = 1:(size(dataaver, 2)-windowSizec(1)+1)
-    for row = 1:(size(dataaver, 1)-windowSizec(2)+1)
-        temp = dataclean(row:(row+windowSizec(2)-1),col:(col+windowSizec(1)-1));
+for col = 1:(size(dataaver, 2)-opts.noteWinSize(1)+1)
+    for row = 1:(size(dataaver, 1)-opts.noteWinSize(2)+1)
+        temp = dataclean(row:(row+opts.noteWinSize(2)-1),col:(col+opts.noteWinSize(1)-1));
         tempmax = max(temp,[],'all');
         temp(temp~=tempmax) = 0;
-        dataclean(row:(row+windowSizec(2)-1),col:(col+windowSizec(1)-1)) = temp;
+        dataclean(row:(row+opts.noteWinSize(2)-1),col:(col+opts.noteWinSize(1)-1)) = temp;
     end
 end
 
@@ -170,8 +195,15 @@ for col = 1:ceil(width(dataclean)/beat)
     xline(start+(col-1)*beat,'Color',[1,1,1])
 end
 
-saveas(gcf,'dataMax.fig')
-saveas(gcf,'dataMax.png')
+imagesc(databefore)
+if ~logical(opts.HideMiddle)
+    try
+        saveas(gcf,[savedir,'dataMax.fig'])
+        saveas(gcf,[savedir,'dataMax.png'])
+    catch
+        error('Fail to save image file. Savedir might not exist.')
+    end
+end
 
 % make music score
 score = zeros(height(dataclean),ceil(width(dataclean)/beat));
@@ -180,6 +212,9 @@ for row = 1:height(dataclean)
     for col = 1:ceil(width(dataclean)/beat)
         windowidx = floor(start+(col-1)*beat-floor(peakdistance/2)):ceil(start+(col-1)*beat+floor(peakdistance/2));
         windowidx(windowidx<=0|windowidx>width(dataclean)) = [];
+        if isempty(windowidx)
+            continue
+        end
         score(row,col) = max(temp(windowidx));
     end
 end
@@ -212,7 +247,7 @@ for y = 1:height(score)
     end
 end
 score(score~=0) = 1;
-printscore(score,names,'scorefull')
+printscore(score,names,[savedir,'scorefull'])
 
 % score to box score
 namenew = namebox(1:41);
@@ -227,7 +262,14 @@ if H > 0
     end
     score = score(H+1:end,:);
 end
-score = score(:,1:64);
+
+if logical(opts.ifAsk)
+    samprange = input('What part of the score do you want to keep? [start, end](column idx)');
+    samprange = samprange(1):samprange(2);
+end
+samprange(samprange<1 | samprange>width(score)) = [];
+
+score = score(:,samprange);
 
 idxnull = [2,4,5,6,7,9,11,14,16,38,40];
 moveeff = zeros(1,42-height(score));
@@ -252,7 +294,7 @@ for i = 1:length(idxnull)
     end
 end
 scorenew(idxnull,:) = [];
-printscore(scorenew,namenew,'score')
+printscore(scorenew,namenew,[savedir,'score'])
 end
 
 % plot function
