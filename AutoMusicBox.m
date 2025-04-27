@@ -22,6 +22,13 @@ function [scorenew,score] = AutoMusicBox(filename,savedir,varargin)
 %       sampled note to middle A (A4), default is 69 (F#9);
 %       ScoreTimeRange: [start, end](column idx), the part of the score to 
 %       keep, only work when ifAsk==0.
+%   about BPM
+%       artiLag: double, manual shifting of the automatically identified 
+%       beat positions, default is 0. 
+%       artiScal: double, manual scaling of the intervals between 
+%       automatically detected beats, default is 0.
+%       beatRange: double, range of sampling centered at each detected
+%       beat, must smaller than beat interval, default is 5.
 %   about image output:
 %       HideMiddle: if export middle image. 1 means not export, 0 means export,
 %       default is 1
@@ -47,6 +54,10 @@ addParameter(p, 'noteWinSize', [10,3]);
 addParameter(p, 'downSampRange', 33);
 addParameter(p, 'upSampRange', 69);
 addParameter(p, 'ScoreTimeRange', 'all');
+%BPM
+addParameter(p, 'artiLag', 0);
+addParameter(p, 'artiScal', 0);
+addParameter(p, 'beatRange', 5);
 %image output
 addParameter(p, 'HideMiddle' , 1);
 addParameter(p, 'ifAsk' , 1);
@@ -197,9 +208,17 @@ dists = diff(locs);
 outliers = isoutlier(dists, 'quartiles');
 dists(outliers) = [];
 GMModel = fitgmdist(dists', 1);
-beat = GMModel.mu;
 
-start = locs(1);
+if ~isa(opts.artiScal,'double')
+    error('Invalid input format: artiScal')
+end
+beat = GMModel.mu+artiScal;
+
+if ~isa(opts.artiLag,'double')
+    error('Invalid input format: artiLag')
+end
+
+start = locs(1)+opts.artiLag;
 for col = 1:ceil(width(dataclean)/beat)
     xline(start+(col-1)*beat,'Color',[1,1,1])
 end
@@ -214,11 +233,16 @@ if ~logical(opts.HideMiddle)
 end
 
 % make music score
+if ~isa(opts.beatRange,'double')
+    error('Invalid input format: beatRange')
+elseif opts.beatRange>beat
+    error('beatRange must be smaller than beat interval')
+end
 score = zeros(height(dataclean),ceil(width(dataclean)/beat));
 for row = 1:height(dataclean)
     temp = dataclean(row,:);
     for col = 1:ceil(width(dataclean)/beat)
-        windowidx = floor(start+(col-1)*beat-floor(peakdistance)/2):ceil(start+(col)*beat-floor(peakdistance)/2);
+        windowidx = floor(start+(col-1)*beat-opts.beatRange/2):ceil(start+(col)*beat-opts.beatRange/2);
         windowidx(windowidx<=0|windowidx>width(dataclean)) = [];
         if isempty(windowidx)
             continue
