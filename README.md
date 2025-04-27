@@ -31,4 +31,4 @@ What part of the score do you want to keep? [start, end](column idx)
 ### dataMax.png： 
 ![dataMax](https://github.com/user-attachments/assets/2cff173c-11a4-4f47-8b0b-2030abb45f20)
 时间-音符-振幅。data.png运行过noteWin滑窗（每窗内仅保留最大值）后的结果。白色纵向线表示节拍位置。
-仅在节拍位置附近的音会被采纳。
+仅在节拍位置附近的音会被采纳。可根据此步结果决定BPM相关参数如artiLag、artiScal、beatRange。  
