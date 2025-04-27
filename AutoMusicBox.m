@@ -16,6 +16,12 @@ function [scorenew,score] = AutoMusicBox(filename,savedir,varargin)
 %   about note sample:
 %       noteWinSize: [x,y], Size of sliding window to sample note from 
 %       Time-frequency graph,default is 10*3
+%       downSampRange: double, The distance in semitones from the lowest 
+%       sampled note to middle A (A4), default is 33 (C1);
+%       upSampRange: double, The distance in semitones from the highest 
+%       sampled note to middle A (A4), default is 69 (F#9);
+%       ScoreTimeRange: [start, end](column idx), the part of the score to 
+%       keep, only work when ifAsk==0.
 %   about image output:
 %       HideMiddle: if export middle image. 1 means not export, 0 means export,
 %       default is 1
@@ -38,6 +44,9 @@ addParameter(p, 'noverlap' , 1024);
 addParameter(p, 'nfft' , 4096);
 %sample
 addParameter(p, 'noteWinSize', [10,3]);
+addParameter(p, 'downSampRange', 33);
+addParameter(p, 'upSampRange', 69);
+addParameter(p, 'ScoreTimeRange', 'all');
 %image output
 addParameter(p, 'HideMiddle' , 1);
 addParameter(p, 'ifAsk' , 1);
@@ -55,7 +64,7 @@ end
 if all(opts.SoundTrack=='all')
     audio = mean(audio,2);
 elseif isscalar(opts.SoundTrack) && isa(opts.SoundTrack,'double')
-    if isa(opts.TimeRange,'str')
+    if isa(opts.TimeRange,'char') || isa(opts.TimeRange,'string')
         if all(opts.TimeRange=='all')
             audio = audio(:,opts.SoundTrack);
         else
@@ -87,27 +96,27 @@ xline(440,'LineWidth',10)
 
 % freq-note sheet
 A4 = 440;
-freqbox = zeros(1,73);
+freqbox = zeros(1,opts.downSampRange+opts.upSampRange+1);
 namebox = cell(1,73);
 charabox = {'A','A#','B','C','C#','D','D#','E','F','F#','G','G#'}; 
 cycleN = 3;
 cycleI = 12;
-for i = 1:33
-   freqbox(34-i) =  A4/(2^(i/12));
-   namebox{34-i} = [charabox{cycleI},num2str(cycleN)];
+for i = 1:opts.downSampRange
+   freqbox(opts.downSampRange+1-i) =  A4/(2^(i/12));
+   namebox{opts.downSampRange+1-i} = [charabox{cycleI},num2str(cycleN)];
    cycleI = cycleI-1;
    if cycleI==0
        cycleN = cycleN-1;
        cycleI = 12;
    end
 end
-freqbox(34) = A4;
-namebox{34} = 'A4';
+freqbox(opts.downSampRange+1) = A4;
+namebox{opts.downSampRange+1} = 'A4';
 cycleN = 4;
 cycleI = 2;
-for i = 1:69
-   freqbox(34+i) =  A4*(2^(i/12));
-   namebox{34+i} = [charabox{cycleI},num2str(cycleN)];
+for i = 1:opts.upSampRange
+   freqbox(opts.downSampRange+1+i) =  A4*(2^(i/12));
+   namebox{opts.downSampRange+1+i} = [charabox{cycleI},num2str(cycleN)];
    cycleI = cycleI+1;
    if cycleI==13
        cycleN = cycleN+1;
@@ -195,7 +204,6 @@ for col = 1:ceil(width(dataclean)/beat)
     xline(start+(col-1)*beat,'Color',[1,1,1])
 end
 
-imagesc(databefore)
 if ~logical(opts.HideMiddle)
     try
         saveas(gcf,[savedir,'dataMax.fig'])
@@ -210,7 +218,7 @@ score = zeros(height(dataclean),ceil(width(dataclean)/beat));
 for row = 1:height(dataclean)
     temp = dataclean(row,:);
     for col = 1:ceil(width(dataclean)/beat)
-        windowidx = floor(start+(col-1)*beat-floor(peakdistance/2)):ceil(start+(col-1)*beat+floor(peakdistance/2));
+        windowidx = floor(start+(col-1)*beat-floor(peakdistance)/2):ceil(start+(col)*beat-floor(peakdistance)/2);
         windowidx(windowidx<=0|windowidx>width(dataclean)) = [];
         if isempty(windowidx)
             continue
@@ -250,7 +258,7 @@ score(score~=0) = 1;
 printscore(score,names,[savedir,'scorefull'])
 
 % score to box score
-namenew = namebox(1:41);
+namenew = namebox(find(strcmp(namebox, 'C1')):find(strcmp(namebox, 'E4')));
 H = height(score)-41;
 if H > 0
     for y = 1:H
@@ -266,6 +274,18 @@ end
 if logical(opts.ifAsk)
     samprange = input('What part of the score do you want to keep? [start, end](column idx)');
     samprange = samprange(1):samprange(2);
+else
+    if isa(opts.ScoreTimeRange,'char') || isa(opts.ScoreTimeRange,'string')
+        if all(opts.ScoreTimeRange=='all')
+            samprange = 1:width(score);
+        else
+            error('Invalid input format: ScoreTimeRange')
+        end
+    elseif isa(opts.ScoreTimeRange,'double') && length(opts.ScoreTimeRange)==2
+        samprange = opts.ScoreTimeRange(1):opts.ScoreTimeRange(2);
+    else
+        error('Invalid input format: ScoreTimeRange')
+    end
 end
 samprange(samprange<1 | samprange>width(score)) = [];
 
@@ -287,9 +307,17 @@ scorenew(movestep+(1:height(score)),:) = score;
 
 for i = 1:length(idxnull)
     y = idxnull(i);
+
     for x = 1:width(score)
-        if scorenew(y,x)~=0 && scorenew(y+12,x)==0
-            scorenew(y+12,x) = 1;
+        if scorenew(y,x)~=0
+            if y+12<=41
+                if scorenew(y+12,x)==0
+                    scorenew(y+12,x) = 1;
+                end
+            else
+                if scorenew(y-12,x)==0
+                end
+            end
         end
     end
 end
